@@ -1,7 +1,9 @@
 ```html
 <!DOCTYPE html>
 <html lang="ja">
+
 <head>
+
 <meta charset="UTF-8">
 
 <meta name="viewport"
@@ -9,7 +11,7 @@
                initial-scale=1.0,
                viewport-fit=cover">
 
-<title>加速度立体表示</title>
+<title>地球固定 加速度立体表示</title>
 
 <style>
 
@@ -17,13 +19,18 @@
     box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
+
     margin: 0;
+
     width: 100%;
     height: 100%;
+
     overflow: hidden;
 
     background: #080808;
+
     color: white;
 
     font-family:
@@ -32,6 +39,7 @@ html, body {
         "Helvetica Neue",
         sans-serif;
 }
+
 
 #canvas {
 
@@ -43,6 +51,7 @@ html, body {
     width: 100%;
     height: 100%;
 }
+
 
 #ui {
 
@@ -56,11 +65,11 @@ html, body {
     padding:
         calc(env(safe-area-inset-top) + 12px)
         15px
-        15px
         15px;
 
     pointer-events: none;
 }
+
 
 button {
 
@@ -80,36 +89,16 @@ button {
     background: #1976d2;
 }
 
-#data {
-
-    margin-top: 12px;
-
-    display: inline-block;
-
-    padding: 10px 13px;
-
-    border-radius: 10px;
-
-    background:
-        rgba(0,0,0,0.65);
-
-    font-family: monospace;
-
-    font-size: 14px;
-
-    line-height: 1.55;
-}
 
 #gravityControl {
 
     margin-top: 10px;
 
-    display: block;
-
     pointer-events: auto;
 
     font-size: 14px;
 }
+
 
 #gravityControl input {
 
@@ -119,55 +108,130 @@ button {
     vertical-align: middle;
 }
 
+
+#data {
+
+    margin-top: 10px;
+
+    display: inline-block;
+
+    padding: 10px 13px;
+
+    border-radius: 10px;
+
+    background:
+        rgba(0,0,0,0.68);
+
+    font-family: monospace;
+
+    font-size: 13px;
+
+    line-height: 1.55;
+}
+
+
 #status {
 
-    margin-top: 8px;
+    margin-top: 7px;
 
     font-size: 12px;
 
     color: #aaa;
 }
 
+
+#hint {
+
+    position: fixed;
+
+    bottom: 0;
+    left: 0;
+
+    width: 100%;
+
+    padding:
+        10px
+        15px
+        calc(env(safe-area-inset-bottom) + 10px);
+
+    text-align: center;
+
+    font-size: 12px;
+
+    color: #888;
+}
+
 </style>
+
 </head>
+
 
 <body>
 
+
 <canvas id="canvas"></canvas>
+
 
 <div id="ui">
 
     <button id="start">
-        加速度センサーを開始
+        センサーを開始
     </button>
+
 
     <div id="gravityControl">
 
         <label>
+
             <input
                 type="checkbox"
                 id="includeGravity"
                 checked
             >
+
             重力を含める
+
         </label>
 
     </div>
 
+
     <div id="data">
 
-        X : 0.00 m/s²<br>
-        Y : 0.00 m/s²<br>
-        Z : 0.00 m/s²<br>
-        |a| : 0.00 m/s²
+        <b>端末座標</b><br>
+
+        X : 0.00<br>
+        Y : 0.00<br>
+        Z : 0.00<br>
+        |a| : 0.00
+
+
+        <br><br>
+
+        <b>地球固定座標</b><br>
+
+        X : 0.00<br>
+        Y : 0.00<br>
+        Z : 0.00
 
     </div>
 
+
     <div id="status">
+
         センサー停止中
+
     </div>
 
 </div>
+
+
+<div id="hint">
+
+    端末を回転させても座標系は空間に固定されます
+
+</div>
+
 
 
 <script>
@@ -184,6 +248,7 @@ const canvas =
 
 const ctx =
     canvas.getContext("2d");
+
 
 let width = 0;
 let height = 0;
@@ -205,17 +270,20 @@ function resize() {
     dpr =
         window.devicePixelRatio || 1;
 
+
     canvas.width =
         width * dpr;
 
     canvas.height =
         height * dpr;
 
+
     canvas.style.width =
         width + "px";
 
     canvas.style.height =
         height + "px";
+
 
     ctx.setTransform(
         dpr,
@@ -225,6 +293,7 @@ function resize() {
         0,
         0
     );
+
 
     cx =
         width / 2;
@@ -242,299 +311,420 @@ window.addEventListener(
 resize();
 
 
+
 /* =========================================================
-   加速度
+   センサー値
    ========================================================= */
 
-let acceleration = {
+let accel = {
 
     x: 0,
     y: 0,
     z: 0
 };
+
+
+let accelGravity = {
+
+    x: 0,
+    y: 0,
+    z: 0
+};
+
+
+
+/* =========================================================
+   姿勢
+   ========================================================= */
+
+let alpha = 0;
+let beta  = 0;
+let gamma = 0;
 
 
 /*
- * 重力を含む値
+ * iPhoneの画面向き
+ *
+ * portrait      = 0
+ * landscape     = 90 / -90
  */
 
-let accelerationGravity = {
+let screenAngle = 0;
 
-    x: 0,
-    y: 0,
-    z: 0
-};
 
 
 /* =========================================================
-   センサー
+   DeviceMotion
    ========================================================= */
-
-let sensorRunning = false;
-
 
 function onMotion(event) {
 
-    /*
-     * 重力を含まない加速度
-     */
 
     if (event.acceleration) {
 
-        acceleration.x =
+        accel.x =
             event.acceleration.x ?? 0;
 
-        acceleration.y =
+        accel.y =
             event.acceleration.y ?? 0;
 
-        acceleration.z =
+        accel.z =
             event.acceleration.z ?? 0;
     }
 
 
-    /*
-     * 重力を含む加速度
-     */
-
     if (event.accelerationIncludingGravity) {
 
-        accelerationGravity.x =
+        accelGravity.x =
             event.accelerationIncludingGravity.x ?? 0;
 
-        accelerationGravity.y =
+        accelGravity.y =
             event.accelerationIncludingGravity.y ?? 0;
 
-        accelerationGravity.z =
+        accelGravity.z =
             event.accelerationIncludingGravity.z ?? 0;
     }
+
 }
 
 
+
 /* =========================================================
-   センサー開始
+   DeviceOrientation
    ========================================================= */
 
-async function startSensors() {
+function onOrientation(event) {
 
-    try {
+    /*
+     * alpha
+     *
+     * Z軸まわり
+     */
 
-        /*
-         * iOS
-         */
-
-        if (
-            typeof DeviceMotionEvent !== "undefined" &&
-            typeof DeviceMotionEvent.requestPermission ===
-                "function"
-        ) {
-
-            const permission =
-                await DeviceMotionEvent.requestPermission();
-
-            if (permission !== "granted") {
-
-                alert(
-                    "加速度センサーへのアクセスが許可されませんでした。"
-                );
-
-                return;
-            }
-        }
+    alpha =
+        (event.alpha || 0) *
+        Math.PI / 180;
 
 
-        window.addEventListener(
-            "devicemotion",
-            onMotion,
-            true
-        );
+    /*
+     * beta
+     *
+     * X軸まわり
+     */
+
+    beta =
+        (event.beta || 0) *
+        Math.PI / 180;
 
 
-        sensorRunning = true;
+    /*
+     * gamma
+     *
+     * Y軸まわり
+     */
+
+    gamma =
+        (event.gamma || 0) *
+        Math.PI / 180;
+}
 
 
-        document
-            .getElementById("start")
-            .style.display = "none";
+
+/* =========================================================
+   画面方向
+   ========================================================= */
+
+function updateScreenAngle() {
+
+    if (
+        screen.orientation &&
+        typeof screen.orientation.angle ===
+            "number"
+    ) {
+
+        screenAngle =
+            screen.orientation.angle *
+            Math.PI / 180;
+
+        return;
+    }
 
 
-        document
-            .getElementById("status")
-            .textContent =
-                "センサー動作中";
+    /*
+     * 古いiOS向け
+     */
 
+    if (
+        typeof window.orientation ===
+            "number"
+    ) {
 
-    } catch (error) {
-
-        console.error(error);
-
-        alert(
-            "センサーを開始できませんでした。\n" +
-            error
-        );
+        screenAngle =
+            window.orientation *
+            Math.PI / 180;
     }
 }
 
 
-document
-    .getElementById("start")
-    .addEventListener(
-        "click",
-        startSensors
-    );
+window.addEventListener(
+    "orientationchange",
+    updateScreenAngle
+);
+
+updateScreenAngle();
+
 
 
 /* =========================================================
-   現在使用する加速度
+   3×3 行列
+   ========================================================= */
+
+function matMul(A, B) {
+
+    const C = [
+
+        [0,0,0],
+        [0,0,0],
+        [0,0,0]
+    ];
+
+
+    for (let i = 0; i < 3; i++) {
+
+        for (let j = 0; j < 3; j++) {
+
+            for (let k = 0; k < 3; k++) {
+
+                C[i][j] +=
+                    A[i][k] *
+                    B[k][j];
+            }
+        }
+    }
+
+
+    return C;
+}
+
+
+
+function matVec(M, v) {
+
+    return {
+
+        x:
+            M[0][0] * v.x +
+            M[0][1] * v.y +
+            M[0][2] * v.z,
+
+        y:
+            M[1][0] * v.x +
+            M[1][1] * v.y +
+            M[1][2] * v.z,
+
+        z:
+            M[2][0] * v.x +
+            M[2][1] * v.y +
+            M[2][2] * v.z
+    };
+}
+
+
+
+/* =========================================================
+   回転行列
+   ========================================================= */
+
+function Rx(angle) {
+
+    const c =
+        Math.cos(angle);
+
+    const s =
+        Math.sin(angle);
+
+
+    return [
+
+        [1, 0, 0],
+
+        [0, c, -s],
+
+        [0, s, c]
+    ];
+}
+
+
+function Ry(angle) {
+
+    const c =
+        Math.cos(angle);
+
+    const s =
+        Math.sin(angle);
+
+
+    return [
+
+        [ c, 0, s],
+
+        [ 0, 1, 0],
+
+        [-s, 0, c]
+    ];
+}
+
+
+function Rz(angle) {
+
+    const c =
+        Math.cos(angle);
+
+    const s =
+        Math.sin(angle);
+
+
+    return [
+
+        [c, -s, 0],
+
+        [s,  c, 0],
+
+        [0,  0, 1]
+    ];
+}
+
+
+
+/* =========================================================
+   iPhone座標 → 地球固定座標
+   ========================================================= */
+
+/*
+ * DeviceOrientationの座標系から
+ * ワールド座標へ変換する。
+ *
+ * 基本的な考え方：
+ *
+ *   端末座標
+ *       ↓
+ *   gamma
+ *       ↓
+ *   beta
+ *       ↓
+ *   alpha
+ *       ↓
+ *   画面回転補正
+ *       ↓
+ *   ワールド座標
+ *
+ *
+ * ここでは
+ *
+ * X = 東西方向に相当
+ * Y = 南北方向に相当
+ * Z = 上方向
+ *
+ * という「地球固定の見え方」を作る。
+ */
+
+
+function deviceToWorld(v) {
+
+
+    /*
+     * DeviceOrientation仕様に
+     * 対応する回転。
+     */
+
+    let M =
+        matMul(
+            Rz(alpha),
+            matMul(
+                Rx(beta),
+                Ry(gamma)
+            )
+        );
+
+
+    /*
+     * 画面回転
+     */
+
+    M =
+        matMul(
+            Rz(screenAngle),
+            M
+        );
+
+
+    return matVec(
+        M,
+        v
+    );
+}
+
+
+
+/* =========================================================
+   使用する加速度
    ========================================================= */
 
 function getAcceleration() {
 
     const includeGravity =
         document
-            .getElementById("includeGravity")
+            .getElementById(
+                "includeGravity"
+            )
             .checked;
+
 
     if (includeGravity) {
 
         return {
 
-            x: accelerationGravity.x,
-            y: accelerationGravity.y,
-            z: accelerationGravity.z
+            x: accelGravity.x,
+            y: accelGravity.y,
+            z: accelGravity.z
         };
 
-    } else {
-
-        return {
-
-            x: acceleration.x,
-            y: acceleration.y,
-            z: acceleration.z
-        };
     }
+
+
+    return {
+
+        x: accel.x,
+        y: accel.y,
+        z: accel.z
+    };
 }
+
 
 
 /* =========================================================
-   3Dベクトル演算
+   3D → 2D
    ========================================================= */
 
-function rotateX(v, angle) {
-
-    const c =
-        Math.cos(angle);
-
-    const s =
-        Math.sin(angle);
-
-    return {
-
-        x: v.x,
-
-        y:
-            v.y * c -
-            v.z * s,
-
-        z:
-            v.y * s +
-            v.z * c
-    };
-}
+const cameraZ =
+    6.0;
 
 
-function rotateY(v, angle) {
-
-    const c =
-        Math.cos(angle);
-
-    const s =
-        Math.sin(angle);
-
-    return {
-
-        x:
-            v.x * c +
-            v.z * s,
-
-        y:
-            v.y,
-
-        z:
-            -v.x * s +
-            v.z * c
-    };
-}
-
-
-function rotateZ(v, angle) {
-
-    const c =
-        Math.cos(angle);
-
-    const s =
-        Math.sin(angle);
-
-    return {
-
-        x:
-            v.x * c -
-            v.y * s,
-
-        y:
-            v.x * s +
-            v.y * c,
-
-        z:
-            v.z
-    };
-}
-
-
-/* =========================================================
-   3D → 2D 射影
-   ========================================================= */
-
-/*
- * カメラは +Z方向を見ている。
- *
- * ここでは分かりやすさを優先して
- * 比較的弱い透視投影にする。
- */
-
-const cameraZ = 6.0;
-
-
-/*
- * 3D空間1単位を
- * 画面上何pxにするか
- */
-
-const pixelsPerUnit = 120;
+const pixelsPerUnit =
+    110;
 
 
 function project(v) {
-
-    /*
-     * カメラとの距離
-     */
 
     const distance =
         cameraZ - v.z;
 
 
-    /*
-     * カメラの後ろに行った場合
-     */
-
-    if (distance <= 0.1) {
+    if (distance <= 0.15) {
 
         return null;
     }
 
-
-    /*
-     * 透視投影係数
-     */
 
     const perspective =
         cameraZ / distance;
@@ -555,23 +745,21 @@ function project(v) {
             perspective,
 
         z:
-            v.z,
-
-        scale:
-            perspective
+            v.z
     };
 }
+
 
 
 /* =========================================================
    3D線
    ========================================================= */
 
-function drawLine3D(
+function line3D(
     a,
     b,
-    lineWidth = 1,
-    alpha = 1
+    width,
+    alpha
 ) {
 
     const pa =
@@ -580,34 +768,41 @@ function drawLine3D(
     const pb =
         project(b);
 
+
     if (!pa || !pb)
         return;
 
 
     ctx.beginPath();
 
+
     ctx.moveTo(
         pa.x,
         pa.y
     );
+
 
     ctx.lineTo(
         pb.x,
         pb.y
     );
 
+
     ctx.lineWidth =
-        lineWidth;
+        width;
+
 
     ctx.strokeStyle =
         `rgba(255,255,255,${alpha})`;
+
 
     ctx.stroke();
 }
 
 
+
 /* =========================================================
-   3D座標軸
+   座標軸
    ========================================================= */
 
 function drawAxes() {
@@ -619,7 +814,8 @@ function drawAxes() {
      * X軸
      */
 
-    drawLine3D(
+    line3D(
+
         {
             x: -L,
             y: 0,
@@ -633,7 +829,7 @@ function drawAxes() {
         },
 
         2,
-        0.8
+        0.85
     );
 
 
@@ -641,7 +837,8 @@ function drawAxes() {
      * Y軸
      */
 
-    drawLine3D(
+    line3D(
+
         {
             x: 0,
             y: -L,
@@ -655,7 +852,7 @@ function drawAxes() {
         },
 
         2,
-        0.8
+        0.85
     );
 
 
@@ -663,7 +860,8 @@ function drawAxes() {
      * Z軸
      */
 
-    drawLine3D(
+    line3D(
+
         {
             x: 0,
             y: 0,
@@ -677,13 +875,14 @@ function drawAxes() {
         },
 
         2,
-        0.8
+        0.85
     );
 }
 
 
+
 /* =========================================================
-   3Dグリッド
+   グリッド
    ========================================================= */
 
 function drawGrid() {
@@ -693,17 +892,13 @@ function drawGrid() {
     const step = 0.5;
 
 
-    /*
-     * XY平面
-     */
-
     for (
         let x = -size;
         x <= size;
         x += step
     ) {
 
-        drawLine3D(
+        line3D(
 
             {
                 x: x,
@@ -729,7 +924,7 @@ function drawGrid() {
         y += step
     ) {
 
-        drawLine3D(
+        line3D(
 
             {
                 x: -size,
@@ -750,35 +945,20 @@ function drawGrid() {
 }
 
 
+
 /* =========================================================
    矢印
    ========================================================= */
 
 function drawArrow(v) {
 
-    /*
-     * 加速度ベクトルの大きさ
-     */
-
-    const magnitude =
-        Math.sqrt(
-            v.x * v.x +
-            v.y * v.y +
-            v.z * v.z
-        );
-
-
-    if (magnitude < 0.001)
-        return;
-
 
     /*
-     * m/s² → 3D空間
-     *
-     * 1 m/s² = 0.25 scene unit
+     * 表示倍率
      */
 
-    const scale = 0.25;
+    const scale =
+        0.25;
 
 
     const tip = {
@@ -794,11 +974,23 @@ function drawArrow(v) {
     };
 
 
+    const length =
+        Math.sqrt(
+            tip.x * tip.x +
+            tip.y * tip.y +
+            tip.z * tip.z
+        );
+
+
+    if (length < 0.001)
+        return;
+
+
     /*
-     * ベクトル本体
+     * 本体
      */
 
-    drawLine3D(
+    line3D(
 
         {
             x: 0,
@@ -811,22 +1003,6 @@ function drawArrow(v) {
         6,
         1
     );
-
-
-    /*
-     * 矢印先端
-     */
-
-    const length =
-        Math.sqrt(
-            tip.x * tip.x +
-            tip.y * tip.y +
-            tip.z * tip.z
-        );
-
-
-    if (length < 0.001)
-        return;
 
 
     /*
@@ -847,7 +1023,7 @@ function drawArrow(v) {
 
 
     /*
-     * 矢印の長さ
+     * 矢印長さ
      */
 
     const headLength =
@@ -857,28 +1033,27 @@ function drawArrow(v) {
         );
 
 
-    /*
-     * 矢印の基部
-     */
-
     const base = {
 
         x:
             tip.x -
-            u.x * headLength,
+            u.x *
+            headLength,
 
         y:
             tip.y -
-            u.y * headLength,
+            u.y *
+            headLength,
 
         z:
             tip.z -
-            u.z * headLength
+            u.z *
+            headLength
     };
 
 
     /*
-     * uに垂直なベクトルを作る
+     * 横方向
      */
 
     let side;
@@ -891,21 +1066,17 @@ function drawArrow(v) {
         side = {
 
             x: -u.y,
-
-            y: u.x,
-
-            z: 0
+            y:  u.x,
+            z:  0
         };
 
     } else {
 
         side = {
 
-            x: 0,
-
+            x:  0,
             y: -u.z,
-
-            z: u.y
+            z:  u.y
         };
     }
 
@@ -928,30 +1099,26 @@ function drawArrow(v) {
         sideLength;
 
 
-    const arrowWidth =
+    const w =
         Math.min(
-            0.14,
+            0.15,
             length * 0.15
         );
 
-
-    /*
-     * 矢印の左右
-     */
 
     const p1 = {
 
         x:
             base.x +
-            side.x * arrowWidth,
+            side.x * w,
 
         y:
             base.y +
-            side.y * arrowWidth,
+            side.y * w,
 
         z:
             base.z +
-            side.z * arrowWidth
+            side.z * w
     };
 
 
@@ -959,26 +1126,27 @@ function drawArrow(v) {
 
         x:
             base.x -
-            side.x * arrowWidth,
+            side.x * w,
 
         y:
             base.y -
-            side.y * arrowWidth,
+            side.y * w,
 
         z:
             base.z -
-            side.z * arrowWidth
+            side.z * w
     };
 
 
-    drawLine3D(
+    line3D(
         tip,
         p1,
         5,
         1
     );
 
-    drawLine3D(
+
+    line3D(
         tip,
         p2,
         5,
@@ -987,17 +1155,21 @@ function drawArrow(v) {
 }
 
 
+
 /* =========================================================
-   加速度表示
+   数値表示
    ========================================================= */
 
-function updateData(v) {
+function updateData(
+    device,
+    world
+) {
 
     const magnitude =
         Math.sqrt(
-            v.x * v.x +
-            v.y * v.y +
-            v.z * v.z
+            device.x * device.x +
+            device.y * device.y +
+            device.z * device.z
         );
 
 
@@ -1005,18 +1177,31 @@ function updateData(v) {
         .getElementById("data")
         .innerHTML =
 
-        `X : ${v.x.toFixed(2)} m/s²<br>` +
-        `Y : ${v.y.toFixed(2)} m/s²<br>` +
-        `Z : ${v.z.toFixed(2)} m/s²<br>` +
-        `|a| : ${magnitude.toFixed(2)} m/s²`;
+        `<b>端末座標</b><br>` +
+
+        `X : ${device.x.toFixed(2)}<br>` +
+        `Y : ${device.y.toFixed(2)}<br>` +
+        `Z : ${device.z.toFixed(2)}<br>` +
+
+        `|a| : ${magnitude.toFixed(2)} m/s²` +
+
+        `<br><br>` +
+
+        `<b>地球固定座標</b><br>` +
+
+        `X : ${world.x.toFixed(2)}<br>` +
+        `Y : ${world.y.toFixed(2)}<br>` +
+        `Z : ${world.z.toFixed(2)} m/s²`;
 }
 
 
+
 /* =========================================================
-   レンダリング
+   Render
    ========================================================= */
 
 function render() {
+
 
     /*
      * 背景
@@ -1033,6 +1218,7 @@ function render() {
     ctx.fillStyle =
         "#080808";
 
+
     ctx.fillRect(
         0,
         0,
@@ -1042,7 +1228,7 @@ function render() {
 
 
     /*
-     * 3D座標系
+     * 3D空間
      */
 
     drawGrid();
@@ -1051,29 +1237,42 @@ function render() {
 
 
     /*
-     * 加速度
+     * 加速度取得
      */
 
-    const v =
+    const device =
         getAcceleration();
 
 
     /*
-     * 今回は端末の姿勢による
-     * 回転をまだ加えない。
-     *
-     * まず「センサー値そのもの」を
-     * 正確に3D表示する。
+     * 端末座標
+     *      ↓
+     * 地球固定座標
      */
 
-    drawArrow(v);
+    const world =
+        deviceToWorld(
+            device
+        );
 
 
     /*
-     * 数値表示
+     * ベクトル描画
      */
 
-    updateData(v);
+    drawArrow(
+        world
+    );
+
+
+    /*
+     * 数値
+     */
+
+    updateData(
+        device,
+        world
+    );
 
 
     requestAnimationFrame(
@@ -1081,6 +1280,139 @@ function render() {
     );
 }
 
+
+
+/* =========================================================
+   センサー開始
+   ========================================================= */
+
+async function startSensors() {
+
+    try {
+
+
+        /*
+         * DeviceMotion
+         */
+
+        if (
+            typeof DeviceMotionEvent !==
+                "undefined" &&
+
+            typeof DeviceMotionEvent
+                .requestPermission ===
+                "function"
+        ) {
+
+            const permission =
+                await DeviceMotionEvent
+                    .requestPermission();
+
+
+            if (
+                permission !==
+                "granted"
+            ) {
+
+                alert(
+                    "加速度センサーが許可されませんでした。"
+                );
+
+                return;
+            }
+        }
+
+
+        /*
+         * DeviceOrientation
+         */
+
+        if (
+            typeof DeviceOrientationEvent !==
+                "undefined" &&
+
+            typeof DeviceOrientationEvent
+                .requestPermission ===
+                "function"
+        ) {
+
+            const permission =
+                await DeviceOrientationEvent
+                    .requestPermission();
+
+
+            if (
+                permission !==
+                "granted"
+            ) {
+
+                alert(
+                    "姿勢センサーが許可されませんでした。"
+                );
+
+                return;
+            }
+        }
+
+
+        /*
+         * イベント登録
+         */
+
+        window.addEventListener(
+            "devicemotion",
+            onMotion,
+            true
+        );
+
+
+        window.addEventListener(
+            "deviceorientation",
+            onOrientation,
+            true
+        );
+
+
+        document
+            .getElementById("start")
+            .style.display =
+                "none";
+
+
+        document
+            .getElementById("status")
+            .textContent =
+                "センサー動作中";
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert(
+            "センサー開始エラー\n" +
+            error
+        );
+    }
+}
+
+
+
+/* =========================================================
+   Start
+   ========================================================= */
+
+document
+    .getElementById("start")
+    .addEventListener(
+        "click",
+        startSensors
+    );
+
+
+/*
+ * 描画開始
+ */
 
 render();
 
